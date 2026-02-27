@@ -1,56 +1,83 @@
-# main.py
+"""
+main.py
+───────
+Entry point. Orchestrates the full MLR pipeline:
+
+    data_loader   →  preprocessing  →  models
+         ↓                                ↓
+    training  (fit + CV + learning curve)
+         ↓
+    evaluation  (metrics + predict + plots)
+
+Run:
+    python main.py
+"""
+
 import os
-from data_loader   import load_dataset
-from preprocessing import create_preprocessor, NUMERIC_FEATURES
-from models        import get_models
-from training      import train_and_evaluate
-from evaluation    import (display_results, plot_comparison,
-                           plot_predicted_vs_actual, plot_residuals,
-                           plot_feature_importance)
-
-DATA_PATH = "data/train.csv"
-
 os.makedirs("plots", exist_ok=True)
 
-# 3.1 Load dataset
-df = load_dataset(DATA_PATH)
+# ── Local modules ──────────────────────────────────────────
+from data_loader   import load_data
+from preprocessing import Preprocessor
+from models        import get_mlr_model
+from training      import (split_data, fit_model,
+                            run_cross_validation,
+                            compute_and_plot_learning_curve)
+from evaluation    import (evaluate_model, predict_house_price,
+                            plot_predicted_vs_actual,
+                            plot_residuals, plot_cv_comparison)
 
-X = df[NUMERIC_FEATURES]
-y = df["SalePrice"]
 
-# Train all models
-models        = get_models()
-results       = {}
-results_preds = {}
-best_model    = None
-best_r2       = -1
-best_Xtest    = None
-best_ytest    = None
+def main():
+    print("\n" + "═"*56)
+    print("   HOUSE PRICE PREDICTOR — Multiple Linear Regression")
+    print("═"*56 + "\n")
 
-for name, model in models.items():
-    print(f"\n{'='*50}\nTraining: {name}\n{'='*50}")
+    # ── 1. Load ──────────────────────────────────────────────
+    X, y = load_data("data/train.csv")
 
-    trained_model, r2, rmse, cv, params, y_test, y_pred = train_and_evaluate(
-        name, model, create_preprocessor(), X, y
-    )
+    # ── 2. Split ─────────────────────────────────────────────
+    X_train, X_test, y_train, y_test = split_data(X, y, test_size=0.2)
 
-    results[name]       = {"R2": r2, "RMSE": rmse, "CV": cv, "Params": params}
-    results_preds[name] = (y_test, y_pred)
+    # ── 3. Preprocess ────────────────────────────────────────
+    preprocessor  = Preprocessor()
+    X_train_sc    = preprocessor.fit_transform(X_train)
 
-    if r2 > best_r2:
-        best_r2    = r2
-        best_model = trained_model
-        best_Xtest = X.loc[y_test.index]
-        best_ytest = y_test
+    # ── 4. Model ─────────────────────────────────────────────
+    model = get_mlr_model()
 
-# 4.2 Results table
-display_results(results)
+    # ── 5. Train ─────────────────────────────────────────────
+    model = fit_model(model, X_train_sc, y_train)
 
-# 4.3 Visualizations
-plot_comparison(results)
-plot_predicted_vs_actual(results_preds, "Random Forest")
-plot_residuals(results_preds, "Random Forest")
-plot_feature_importance(best_model, best_Xtest, best_ytest)
+    # ── 6. Evaluate (hold-out) ───────────────────────────────
+    metrics, y_pred = evaluate_model(model, preprocessor, X_test, y_test)
 
-print("\n✅ All plots saved to /plots directory.")
-print(f"✅ Best model: Random Forest  |  R² = {best_r2:.3f}")
+    # ── 7. Cross-Validation (3, 5, 10-fold) ──────────────────
+    cv_results = run_cross_validation(X, y, cv_folds=[3, 5, 10])
+
+    # ── 8. Learning Curve ────────────────────────────────────
+    compute_and_plot_learning_curve(X, y, name="Multiple Linear Regression")
+
+    # ── 9. Diagnostic Plots ──────────────────────────────────
+    plot_predicted_vs_actual(y_test, y_pred)
+    plot_residuals(y_test, y_pred)
+    plot_cv_comparison(cv_results)
+
+    # ── 10. Sample Predictions (5 random test houses) ────────
+    sample      = X_test.sample(5, random_state=99)
+    predictions = predict_house_price(model, preprocessor, sample)
+    import numpy as np
+    predictions.insert(0, "actual_price_usd",
+                       np.exp(y_test.loc[sample.index]).astype(int).values)
+
+    print("\n" + "═"*64)
+    print("   SAMPLE PREDICTIONS  (5 test houses)")
+    print("═"*64)
+    print(predictions.to_string(index=False))
+    print("═"*64)
+
+    print("\n✅  All done!  Plots saved in → plots/\n")
+
+
+if __name__ == "__main__":
+    main()

@@ -21,11 +21,11 @@ def display_results(results):
 # 4.3a Bar charts — R², RMSE, CV R² comparison
 # ─────────────────────────────────────────────
 def plot_comparison(results):
-    names      = list(results.keys())
-    r2_scores  = [results[n]["R2"]   for n in names]
-    rmse_scores= [results[n]["RMSE"] for n in names]
-    cv_scores  = [results[n]["CV"]   for n in names]
-    colors     = ["#4CAF50", "#FF9800", "#2196F3"]
+    names       = list(results.keys())
+    r2_scores   = [results[n]["R2"]   for n in names]
+    rmse_scores = [results[n]["RMSE"] for n in names]
+    cv_scores   = [results[n]["CV"]   for n in names]
+    colors      = ["#4CAF50", "#FF9800", "#2196F3"]
 
     fig, axes = plt.subplots(1, 3, figsize=(14, 5))
     fig.suptitle("Model Comparison", fontsize=14, fontweight="bold")
@@ -48,11 +48,11 @@ def plot_comparison(results):
 
     plt.tight_layout()
     plt.savefig("plots/model_comparison.png", dpi=150)
-    plt.show()
+    plt.close()
 
 
 # ─────────────────────────────────────────────
-# 4.3b Predicted vs. Actual  (regression equivalent of confusion matrix)
+# 4.3b Predicted vs. Actual
 # ─────────────────────────────────────────────
 def plot_predicted_vs_actual(results_preds, name="Random Forest"):
     if name not in results_preds:
@@ -69,7 +69,7 @@ def plot_predicted_vs_actual(results_preds, name="Random Forest"):
     plt.legend()
     plt.tight_layout()
     plt.savefig(f"plots/predicted_vs_actual_{name.replace(' ', '_')}.png", dpi=150)
-    plt.show()
+    plt.close()
 
 
 # ─────────────────────────────────────────────
@@ -84,14 +84,12 @@ def plot_residuals(results_preds, name="Random Forest"):
     fig, axes = plt.subplots(1, 2, figsize=(13, 5))
     fig.suptitle(f"Residual Analysis — {name}", fontsize=13, fontweight="bold")
 
-    # Residuals vs. Actual
     axes[0].scatter(y_test, residuals, alpha=0.5, color="tomato", s=20)
     axes[0].axhline(0, color="black", linestyle="--", linewidth=1)
     axes[0].set_xlabel("Actual SalePrice ($)")
     axes[0].set_ylabel("Residual ($)")
     axes[0].set_title("Residuals vs. Actual Price")
 
-    # Residual distribution
     axes[1].hist(residuals, bins=40, color="steelblue", edgecolor="white")
     axes[1].axvline(0, color="red", linestyle="--")
     axes[1].set_xlabel("Residual ($)")
@@ -100,23 +98,21 @@ def plot_residuals(results_preds, name="Random Forest"):
 
     plt.tight_layout()
     plt.savefig(f"plots/residuals_{name.replace(' ', '_')}.png", dpi=150)
-    plt.show()
+    plt.close()
 
 
 # ─────────────────────────────────────────────
-# 4.3d Feature importance (named, not indexed)
+# 4.3d Feature importance
 # ─────────────────────────────────────────────
 def plot_feature_importance(best_model, X_test, y_test, top_n=15):
-    reg = best_model.named_steps["regressor"]
+    reg          = best_model.named_steps["regressor"]
     preprocessor = best_model.named_steps["preprocessor"]
 
-    # Get feature names from the preprocessor
     try:
         feature_names = preprocessor.get_feature_names_out()
     except Exception:
         feature_names = [f"Feature {i}" for i in range(len(reg.feature_importances_))]
 
-    # Clean up prefixes added by ColumnTransformer
     feature_names = [
         n.replace("num__", "").replace("cat__", "")
         for n in feature_names
@@ -124,31 +120,29 @@ def plot_feature_importance(best_model, X_test, y_test, top_n=15):
 
     if hasattr(reg, "feature_importances_"):
         importances = reg.feature_importances_
-        indices = np.argsort(importances)[-top_n:]
+        indices     = np.argsort(importances)[-top_n:]
 
         plt.figure(figsize=(10, 6))
-        plt.barh(
-            range(len(indices)),
-            importances[indices],
-            color="steelblue", edgecolor="black"
-        )
+        plt.barh(range(len(indices)), importances[indices],
+                 color="steelblue", edgecolor="black")
         plt.yticks(range(len(indices)), [feature_names[i] for i in indices])
         plt.xlabel("Importance (Mean Decrease in Impurity)")
         plt.title(f"Top {top_n} Feature Importances — Random Forest")
         plt.tight_layout()
         plt.savefig("plots/feature_importance.png", dpi=150)
-        plt.show()
+        plt.close()
 
     else:
-        # Fallback: permutation importance for Linear Regression / models without .feature_importances_
-        perm = permutation_importance(best_model, X_test, y_test, n_repeats=10, random_state=42)
+        perm    = permutation_importance(best_model, X_test, y_test,
+                                         n_repeats=10, random_state=42)
         indices = np.argsort(perm.importances_mean)[-top_n:]
 
         plt.figure(figsize=(10, 6))
-        plt.barh(range(len(indices)), perm.importances_mean[indices], color="steelblue")
+        plt.barh(range(len(indices)), perm.importances_mean[indices],
+                 color="steelblue")
         plt.yticks(range(len(indices)), [feature_names[i] for i in indices])
         plt.xlabel("Permutation Importance (Mean R² decrease)")
         plt.title(f"Top {top_n} Feature Importances (Permutation)")
         plt.tight_layout()
-        plt.savefig("plots/feature_importance.png", dpi=150)
-        plt.show()
+        plt.savefig(f"plots/feature_importance_{best_model.named_steps['regressor'].__class__.__name__}.png", dpi=150)
+        plt.close()

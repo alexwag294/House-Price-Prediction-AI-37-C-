@@ -65,25 +65,24 @@ def train_and_evaluate(name, model, preprocessor, X, y):
                      f"{score:.3f}", ha="center", va="bottom", fontsize=8)
         plt.tight_layout()
         plt.savefig("plots/hyperparameter_tuning.png", dpi=150)
-        plt.show()
+        plt.close()  # ← was plt.show()
 
     else:
         pipeline.fit(X_train, y_train)
 
-    # ── Learning curve (training progress / loss curve equivalent) ─────────
+    # ── Learning curve ─────────────────────────────────────────────────────
     plot_learning_curve(pipeline, name, X, y)
 
     y_pred = pipeline.predict(X_test)
 
-    r2   = r2_score(y_test, y_pred)
-    rmse = np.sqrt(mean_squared_error(y_test, y_pred))
+    r2       = r2_score(y_test, y_pred)
+    rmse     = np.sqrt(mean_squared_error(y_test, y_pred))
     cv_score = cross_val_score(pipeline, X, y, cv=5, scoring="r2").mean()
 
     return pipeline, r2, rmse, cv_score, best_params, y_test, y_pred
 
 
 def plot_learning_curve(pipeline, name, X, y):
-    """Plots training vs. validation R² as training size increases (loss-curve equivalent)."""
     train_sizes, train_scores, val_scores = learning_curve(
         pipeline, X, y,
         cv=5,
@@ -109,4 +108,4 @@ def plot_learning_curve(pipeline, name, X, y):
     plt.grid(True, linestyle="--", alpha=0.5)
     plt.tight_layout()
     plt.savefig(f"plots/learning_curve_{name.replace(' ', '_')}.png", dpi=150)
-    plt.show()
+    plt.close()  # ← was plt.show()
