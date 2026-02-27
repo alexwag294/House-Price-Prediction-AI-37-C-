@@ -1,148 +1,160 @@
-# evaluation.py
+"""
+evaluation.py
+─────────────
+Handles:
+  - Hold-out test set metrics  (R², MAE, RMSE in log & $ scale)
+  - predict_house_price()  — reusable prediction utility
+  - Diagnostic plots  (Actual vs Predicted, Residuals, CV bar chart)
+"""
+
 import numpy as np
+import pandas as pd
 import matplotlib.pyplot as plt
-from sklearn.inspection import permutation_importance
+from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 
 
-# ─────────────────────────────────────────────
-# 4.2  Results table (printed to console)
-# ─────────────────────────────────────────────
-def display_results(results):
-    print("\n" + "=" * 65)
-    print(f"{'Model':<22} {'R²':>8} {'RMSE':>12} {'CV R²':>8}  Best Params")
-    print("=" * 65)
-    for name, m in results.items():
-        params_str = str(m["Params"])[:25]
-        print(f"{name:<22} {m['R2']:>8.3f} {m['RMSE']:>12.2f} {m['CV']:>8.3f}  {params_str}")
-    print("=" * 65)
+# ══════════════════════════════════════════════════════════
+#  METRICS
+# ══════════════════════════════════════════════════════════
+def evaluate_model(model, preprocessor,
+                   X_test: pd.DataFrame, y_test: pd.Series) -> dict:
+    """
+    Evaluate the trained model on the hold-out test set.
+
+    Returns
+    -------
+    metrics : dict  with r2, mae, rmse, mae_usd, rmse_usd
+    y_pred  : np.ndarray  (log-scale predictions)
+    """
+    X_sc   = preprocessor.transform(X_test)
+    y_pred = model.predict(X_sc)
+
+    r2      = r2_score(y_test, y_pred)
+    mae     = mean_absolute_error(y_test, y_pred)
+    rmse    = np.sqrt(mean_squared_error(y_test, y_pred))
+    mae_usd = mean_absolute_error(np.exp(y_test), np.exp(y_pred))
+    rmse_usd= np.sqrt(mean_squared_error(np.exp(y_test), np.exp(y_pred)))
+
+    print("\n" + "═"*50)
+    print("   HOLD-OUT TEST SET RESULTS")
+    print("═"*50)
+    print(f"   R²               : {r2:.4f}")
+    print(f"   MAE  (log scale) : {mae:.4f}")
+    print(f"   RMSE (log scale) : {rmse:.4f}")
+    print(f"   MAE  ($)         : ${mae_usd:>10,.0f}")
+    print(f"   RMSE ($)         : ${rmse_usd:>10,.0f}")
+    print("═"*50)
+
+    return dict(r2=r2, mae=mae, rmse=rmse,
+                mae_usd=mae_usd, rmse_usd=rmse_usd), y_pred
 
 
-# ─────────────────────────────────────────────
-# 4.3a Bar charts — R², RMSE, CV R² comparison
-# ─────────────────────────────────────────────
-def plot_comparison(results):
-    names       = list(results.keys())
-    r2_scores   = [results[n]["R2"]   for n in names]
-    rmse_scores = [results[n]["RMSE"] for n in names]
-    cv_scores   = [results[n]["CV"]   for n in names]
-    colors      = ["#4CAF50", "#FF9800", "#2196F3"]
+# ══════════════════════════════════════════════════════════
+#  PREDICTION UTILITY
+# ══════════════════════════════════════════════════════════
+def predict_house_price(model, preprocessor,
+                        X_new: pd.DataFrame) -> pd.DataFrame:
+    """
+    Predict house prices for new / unseen data.
 
-    fig, axes = plt.subplots(1, 3, figsize=(14, 5))
-    fig.suptitle("Model Comparison", fontsize=14, fontweight="bold")
+    Parameters
+    ----------
+    model        : fitted LinearRegression
+    preprocessor : fitted Preprocessor
+    X_new        : pd.DataFrame  (raw features, same columns as training)
 
-    for ax, values, title, color, ylabel in zip(
-        axes,
-        [r2_scores, rmse_scores, cv_scores],
-        ["R² Score", "RMSE ($)", "Cross-Validation R²"],
-        colors, ["R²", "RMSE", "R²"]
-    ):
-        bars = ax.bar(names, values, color=color, edgecolor="black", width=0.5)
-        ax.set_title(title)
-        ax.set_ylabel(ylabel)
-        ax.set_xticks(range(len(names)))
-        ax.set_xticklabels(names, rotation=15, ha="right")
-        for bar, v in zip(bars, values):
-            ax.text(bar.get_x() + bar.get_width() / 2,
-                    bar.get_height() + max(values) * 0.01,
-                    f"{v:.3f}", ha="center", va="bottom", fontsize=9)
+    Returns
+    -------
+    pd.DataFrame with columns:
+        predicted_log_price  — raw model output
+        predicted_price_usd  — exponentiated back to dollars
+        lower_bound_usd      — indicative −10 % interval
+        upper_bound_usd      — indicative +10 % interval
+    """
+    X_sc     = preprocessor.transform(X_new)
+    log_pred = model.predict(X_sc)
+    price    = np.exp(log_pred)
 
-    plt.tight_layout()
-    plt.savefig("plots/model_comparison.png", dpi=150)
-    plt.close()
+    return pd.DataFrame({
+        "predicted_log_price": np.round(log_pred, 4),
+        "predicted_price_usd": price.astype(int),
+        "lower_bound_usd":     (price * 0.90).astype(int),
+        "upper_bound_usd":     (price * 1.10).astype(int),
+    }, index=X_new.index)
 
 
-# ─────────────────────────────────────────────
-# 4.3b Predicted vs. Actual
-# ─────────────────────────────────────────────
-def plot_predicted_vs_actual(results_preds, name="Random Forest"):
-    if name not in results_preds:
-        return
-    y_test, y_pred = results_preds[name]
+# ══════════════════════════════════════════════════════════
+#  DIAGNOSTIC PLOTS
+# ══════════════════════════════════════════════════════════
+def plot_predicted_vs_actual(y_test: pd.Series, y_pred: np.ndarray):
+    r2 = r2_score(y_test, y_pred)
+    y_true_usd = np.exp(y_test)
+    y_pred_usd = np.exp(y_pred)
 
     plt.figure(figsize=(7, 6))
-    plt.scatter(y_test, y_pred, alpha=0.5, color="steelblue", edgecolors="none", s=20)
-    lo, hi = min(y_test.min(), y_pred.min()), max(y_test.max(), y_pred.max())
-    plt.plot([lo, hi], [lo, hi], "r--", linewidth=1.5, label="Perfect prediction")
-    plt.title(f"Predicted vs. Actual — {name}")
-    plt.xlabel("Actual SalePrice ($)")
-    plt.ylabel("Predicted SalePrice ($)")
+    plt.scatter(y_true_usd / 1000, y_pred_usd / 1000,
+                alpha=0.45, s=30, color="#3A7DC9", edgecolors="white", lw=0.3)
+    lo = min(y_true_usd.min(), y_pred_usd.min()) / 1000 * 0.95
+    hi = max(y_true_usd.max(), y_pred_usd.max()) / 1000 * 1.05
+    plt.plot([lo, hi], [lo, hi], "--", color="#E05252", lw=2, label="Perfect Fit")
+    plt.xlim(lo, hi); plt.ylim(lo, hi)
+    plt.xlabel("Actual Price ($K)")
+    plt.ylabel("Predicted Price ($K)")
+    plt.title(f"Predicted vs Actual  (R² = {r2:.4f})")
     plt.legend()
     plt.tight_layout()
-    plt.savefig(f"plots/predicted_vs_actual_{name.replace(' ', '_')}.png", dpi=150)
+    plt.savefig("plots/predicted_vs_actual_MLR.png", dpi=150)
     plt.close()
+    print("[Evaluation] Plot saved → plots/predicted_vs_actual_MLR.png")
 
 
-# ─────────────────────────────────────────────
-# 4.3c Residual plot
-# ─────────────────────────────────────────────
-def plot_residuals(results_preds, name="Random Forest"):
-    if name not in results_preds:
-        return
-    y_test, y_pred = results_preds[name]
-    residuals = y_test - y_pred
+def plot_residuals(y_test: pd.Series, y_pred: np.ndarray):
+    residuals = y_test.values - y_pred
 
     fig, axes = plt.subplots(1, 2, figsize=(13, 5))
-    fig.suptitle(f"Residual Analysis — {name}", fontsize=13, fontweight="bold")
+    fig.suptitle("Residual Diagnostics — Multiple Linear Regression",
+                 fontsize=13, fontweight="bold")
 
-    axes[0].scatter(y_test, residuals, alpha=0.5, color="tomato", s=20)
-    axes[0].axhline(0, color="black", linestyle="--", linewidth=1)
-    axes[0].set_xlabel("Actual SalePrice ($)")
-    axes[0].set_ylabel("Residual ($)")
-    axes[0].set_title("Residuals vs. Actual Price")
+    axes[0].scatter(y_pred, residuals, alpha=0.4, s=30,
+                    color="#4DB87A", edgecolors="white", lw=0.3)
+    axes[0].axhline(0, color="#E05252", lw=1.8, linestyle="--")
+    axes[0].set_xlabel("Fitted Value (log scale)")
+    axes[0].set_ylabel("Residual")
+    axes[0].set_title("Residuals vs Fitted")
 
-    axes[1].hist(residuals, bins=40, color="steelblue", edgecolor="white")
-    axes[1].axvline(0, color="red", linestyle="--")
-    axes[1].set_xlabel("Residual ($)")
-    axes[1].set_ylabel("Frequency")
+    axes[1].hist(residuals, bins=40, color="#9B72CF",
+                 edgecolor="white", linewidth=0.4)
+    axes[1].axvline(0, color="#E05252", lw=1.8, linestyle="--")
+    axes[1].set_xlabel("Residual")
+    axes[1].set_ylabel("Count")
     axes[1].set_title("Residual Distribution")
 
     plt.tight_layout()
-    plt.savefig(f"plots/residuals_{name.replace(' ', '_')}.png", dpi=150)
+    plt.savefig("plots/residuals_MLR.png", dpi=150)
     plt.close()
+    print("[Evaluation] Plot saved → plots/residuals_MLR.png")
 
 
-# ─────────────────────────────────────────────
-# 4.3d Feature importance
-# ─────────────────────────────────────────────
-def plot_feature_importance(best_model, X_test, y_test, top_n=15):
-    reg          = best_model.named_steps["regressor"]
-    preprocessor = best_model.named_steps["preprocessor"]
+def plot_cv_comparison(cv_results: dict):
+    ks    = sorted(cv_results.keys())
+    means = [cv_results[k]["test_r2"].mean() for k in ks]
+    stds  = [cv_results[k]["test_r2"].std()  for k in ks]
+    colors= ["#3A7DC9", "#4DB87A", "#F5A623"]
 
-    try:
-        feature_names = preprocessor.get_feature_names_out()
-    except Exception:
-        feature_names = [f"Feature {i}" for i in range(len(reg.feature_importances_))]
-
-    feature_names = [
-        n.replace("num__", "").replace("cat__", "")
-        for n in feature_names
-    ]
-
-    if hasattr(reg, "feature_importances_"):
-        importances = reg.feature_importances_
-        indices     = np.argsort(importances)[-top_n:]
-
-        plt.figure(figsize=(10, 6))
-        plt.barh(range(len(indices)), importances[indices],
-                 color="steelblue", edgecolor="black")
-        plt.yticks(range(len(indices)), [feature_names[i] for i in indices])
-        plt.xlabel("Importance (Mean Decrease in Impurity)")
-        plt.title(f"Top {top_n} Feature Importances — Random Forest")
-        plt.tight_layout()
-        plt.savefig("plots/feature_importance.png", dpi=150)
-        plt.close()
-
-    else:
-        perm    = permutation_importance(best_model, X_test, y_test,
-                                         n_repeats=10, random_state=42)
-        indices = np.argsort(perm.importances_mean)[-top_n:]
-
-        plt.figure(figsize=(10, 6))
-        plt.barh(range(len(indices)), perm.importances_mean[indices],
-                 color="steelblue")
-        plt.yticks(range(len(indices)), [feature_names[i] for i in indices])
-        plt.xlabel("Permutation Importance (Mean R² decrease)")
-        plt.title(f"Top {top_n} Feature Importances (Permutation)")
-        plt.tight_layout()
-        plt.savefig(f"plots/feature_importance_{best_model.named_steps['regressor'].__class__.__name__}.png", dpi=150)
-        plt.close()
+    plt.figure(figsize=(6, 5))
+    bars = plt.bar([f"{k}-Fold" for k in ks], means,
+                   color=colors, edgecolor="white", lw=0.5, width=0.5)
+    plt.errorbar([f"{k}-Fold" for k in ks], means, yerr=stds,
+                 fmt="none", color="black", capsize=7, lw=1.5)
+    for bar, m in zip(bars, means):
+        plt.text(bar.get_x() + bar.get_width() / 2, m + 0.003,
+                 f"{m:.4f}", ha="center", va="bottom",
+                 fontsize=10, fontweight="bold")
+    plt.ylim(min(means) - 0.06, 1.0)
+    plt.ylabel("Mean R²")
+    plt.title("Cross-Validation R²  (3 / 5 / 10-Fold)")
+    plt.grid(axis="y", alpha=0.3)
+    plt.tight_layout()
+    plt.savefig("plots/cv_comparison_MLR.png", dpi=150)
+    plt.close()
+    print("[Evaluation] Plot saved → plots/cv_comparison_MLR.png")
