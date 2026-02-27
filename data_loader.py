@@ -1,10 +1,11 @@
 """
 data_loader.py
 ──────────────
-Loads train.csv and returns ALL 262 features + target.
+Loads train.csv and returns ALL features + log-transformed target.
 Target: SalePrice (log-transformed)
 """
 
+import numpy as np
 import pandas as pd
 
 TARGET = "SalePrice"
@@ -16,8 +17,13 @@ def load_data(filepath: str = "data/train.csv"):
     if TARGET not in df.columns:
         raise ValueError(f"'{TARGET}' column not found in dataset.")
 
-    y = df[TARGET].copy()
-    X = df.drop(columns=[TARGET]).copy()
+    y = np.log(df[TARGET].copy())   # log-transform target
+    X = df.drop(columns=[TARGET, "Id"], errors="ignore").copy()
+
+    # One-hot encode categoricals
+    cat_cols = X.select_dtypes(include=["object"]).columns.tolist()
+    if cat_cols:
+        X = pd.get_dummies(X, columns=cat_cols, drop_first=True)
 
     # Convert boolean columns to int
     bool_cols = X.select_dtypes(include="bool").columns
