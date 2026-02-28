@@ -36,14 +36,11 @@ from plot_3d       import plot_3d
 
 
 def section(title, step, total=14):
-    print("\n" + "█"*60)
-    print(f"  STEP {step}/{total} — {title}")
-    print("█"*60)
-    time.sleep(0.2)
+    print(f"\n  STEP {step}/{total} — {title}")
+    print("  " + "-"*50)
 
 def done(msg):
-    print(f"  ✅  {msg}")
-    time.sleep(0.2)
+    print(f"  {msg}")
 
 def show_plot(path, title):
     """Show plot — close the window to continue to next step."""
