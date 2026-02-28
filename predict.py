@@ -1,8 +1,8 @@
 """
-predict.py  —  STANDALONE VERSION
-──────────────────────────────────
-Does NOT depend on any other file in the project.
-Just needs:  data/train.csv
+predict.py
+──────────
+Predict house prices using 8 key features as user input.
+No value restrictions — enter any number.
 
 Run:  python predict.py
 """
@@ -13,99 +13,89 @@ from sklearn.linear_model import LinearRegression
 from sklearn.preprocessing import StandardScaler
 from sklearn.model_selection import train_test_split
 
-# ══════════════════════════════════════════════════════════
-#  STEP 1 — Load & prepare data
-# ══════════════════════════════════════════════════════════
-print("\n[predict.py] Loading data and training model...")
+FEATURES = [
+    ("OverallQual",  "Overall Quality      (1–10)",    6),
+    ("GrLivArea",    "Above Ground Area    (sq ft)",   1462),
+    ("TotalSF",      "Total Square Feet    (sq ft)",   2473),
+    ("GarageCars",   "Garage Capacity      (cars)",    2),
+    ("TotalBath",    "Total Bathrooms      (e.g 2.5)", 2),
+    ("GarageArea",   "Garage Area          (sq ft)",   480),
+    ("YearBuilt",    "Year Built",                     1973),
+    ("TotalBsmtSF",  "Basement Area        (sq ft)",   991),
+]
 
-df     = pd.read_csv("data/train.csv")
-TARGET = "SalePrice"
+# ── Load & Train ──────────────────────────────────────────
+print("\n" + "="*58)
+print("   🏠  HOUSE PRICE PREDICTOR  —  MLR Model")
+print("="*58)
+print("\n  Loading data and training model...")
 
-y_log  = df[TARGET]                 # log-scale target (~12.2 = $208,500)
-X      = df.drop(columns=[TARGET])
+df    = pd.read_csv("data/train.csv")
+y_log = df["SalePrice"]
+X_raw = df.drop(columns=["SalePrice"])
+bool_cols = X_raw.select_dtypes("bool").columns
+X_raw[bool_cols] = X_raw[bool_cols].astype(int)
+X_filled = X_raw.fillna(X_raw.median(numeric_only=True))
+medians  = X_filled.median(numeric_only=True)
+all_cols = X_filled.columns.tolist()
 
-# Convert booleans to int, fill missing
-bool_cols    = X.select_dtypes("bool").columns
-X[bool_cols] = X[bool_cols].astype(int)
-X            = X.fillna(X.median(numeric_only=True))
+X_train, _, y_train, _ = train_test_split(
+    X_filled, y_log, test_size=0.2, random_state=42)
 
-# ══════════════════════════════════════════════════════════
-#  STEP 2 — Train model
-# ══════════════════════════════════════════════════════════
-X_train, X_test, y_train, y_test = train_test_split(
-    X, y_log, test_size=0.2, random_state=42)
+scaler = StandardScaler()
+model  = LinearRegression(n_jobs=-1)
+model.fit(scaler.fit_transform(X_train), y_train)
+print("  ✅  Model ready!\n")
 
-scaler     = StandardScaler()
-X_train_sc = scaler.fit_transform(X_train)
+# ── Predict Loop ──────────────────────────────────────────
+go = True
+while go:
+    print("="*58)
+    print("  Enter house details  (press Enter for default)")
+    print("="*58)
 
-model = LinearRegression()
-model.fit(X_train_sc, y_train)
+    user = {}
+    for feat, label, default in FEATURES:
+        while True:
+            try:
+                raw = input(f"  {label} [{default}]: ").strip()
+                user[feat] = float(raw) if raw else default
+                break
+            except ValueError:
+                print("    ⚠  Please enter a number")
 
-print("[predict.py] Model trained!\n")
+    # Build full feature row from medians, override the 8
+    row = medians.to_dict()
+    for k, v in user.items():
+        if k in row:
+            row[k] = v
 
-# ══════════════════════════════════════════════════════════
-#  STEP 3 — Pick mode
-# ══════════════════════════════════════════════════════════
-MODE        = "single"
-ROW_INDEX   = 0
-ROW_INDICES = [0, 5, 42, 100, 500]
-RANDOM_N    = 5
+    inp      = pd.DataFrame([row])[all_cols]
+    log_pred = model.predict(scaler.transform(inp))[0]
+    price    = int(np.exp(log_pred))
+    low      = int(price * 0.90)
+    high     = int(price * 1.10)
+    per_sf   = price // int(user["TotalSF"]) if user["TotalSF"] > 0 else 0
 
-if MODE == "single":
-    sel_X = X.iloc[[ROW_INDEX]]
-    sel_y = y_log.iloc[[ROW_INDEX]]
-elif MODE == "multiple":
-    sel_X = X.iloc[ROW_INDICES]
-    sel_y = y_log.iloc[ROW_INDICES]
-elif MODE == "random":
-    rng   = np.random.default_rng(42)
-    idxs  = rng.choice(len(X), size=RANDOM_N, replace=False)
-    sel_X = X.iloc[idxs]
-    sel_y = y_log.iloc[idxs]
+    print("\n" + "="*58)
+    print("   🏠  PREDICTION RESULT")
+    print("="*58)
+    print(f"\n  OverallQual : {int(user['OverallQual'])}/10"
+          f"   |  GrLivArea  : {int(user['GrLivArea']):,} sq ft")
+    print(f"  TotalSF     : {int(user['TotalSF']):,} sq ft"
+          f"  |  GarageCars : {int(user['GarageCars'])} car(s)")
+    print(f"  TotalBath   : {user['TotalBath']}"
+          f"        |  GarageArea : {int(user['GarageArea']):,} sq ft")
+    print(f"  YearBuilt   : {int(user['YearBuilt'])}"
+          f"      |  TotalBsmtSF: {int(user['TotalBsmtSF']):,} sq ft")
+    print()
+    print(f"  {'─'*54}")
+    print(f"  Predicted   : ${price:>12,}")
+    print(f"  Range       : ${low:,}  –  ${high:,}")
+    print(f"  Per sq ft   : ${per_sf:,}")
+    print(f"  {'─'*54}\n")
 
-# ══════════════════════════════════════════════════════════
-#  STEP 4 — Predict and convert log price → real dollars
-# ══════════════════════════════════════════════════════════
-X_sc      = scaler.transform(sel_X)
-log_preds = model.predict(X_sc)
+    go = input("  Predict another house? (y/n) [n]: ").strip().lower() == "y"
+    print()
 
-# np.exp() is the key — converts log(price) back to $
-actual_usd    = np.exp(sel_y.values).astype(int)
-predicted_usd = np.exp(log_preds).astype(int)
-lower_usd     = (np.exp(log_preds) * 0.90).astype(int)
-upper_usd     = (np.exp(log_preds) * 1.10).astype(int)
-error_pct     = ((predicted_usd - actual_usd) / actual_usd * 100).round(1)
-
-# ══════════════════════════════════════════════════════════
-#  STEP 5 — Print results
-# ══════════════════════════════════════════════════════════
-print("=" * 58)
-print("   HOUSE PRICE PREDICTION RESULTS")
-print("=" * 58)
-
-for i, (idx, actual, predicted, lower, upper, err) in enumerate(
-        zip(sel_X.index, actual_usd, predicted_usd,
-            lower_usd, upper_usd, error_pct), 1):
-
-    tick  = "PASS" if abs(err) <= 10 else "MISS"
-    house = sel_X.loc[idx]
-
-    print(f"\n  House {i}  (Row {idx})")
-    print(f"  TotalSF: {int(house['TotalSF']):,}  |  "
-          f"Quality: {int(house['OverallQual'])}/10  |  "
-          f"GrLivArea: {int(house['GrLivArea']):,}")
-    print(f"  GarageCars: {int(house['GarageCars'])}  |  "
-          f"TotalBath: {house['TotalBath']}  |  "
-          f"GarageArea: {int(house['GarageArea'])}")
-    print(f"  {'─' * 47}")
-    print(f"  Actual    :  ${actual:>10,}")
-    print(f"  Predicted :  ${predicted:>10,}  ({err:+.1f}%)  [{tick}]")
-    print(f"  Range     :  ${lower:,}  --  ${upper:,}")
-
-if len(sel_X) > 1:
-    within = sum(abs(e) <= 10 for e in error_pct)
-    print(f"\n{'=' * 58}")
-    print(f"  Within +-10%  :  {within}/{len(sel_X)} houses")
-    print(f"  Mean Error    :  {abs(error_pct).mean():.1f}%")
-
-print("=" * 58 + "\n")
+print("="*58 + "\n")
