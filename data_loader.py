@@ -16,8 +16,8 @@ def load_data(filepath: str = "data/train.csv"):
 
     if TARGET not in df.columns:
         raise ValueError(f"'{TARGET}' column not found in dataset.")
-
-    y = np.log(df[TARGET].copy())   # log-transform target
+    y = df[TARGET].copy().astype(float)   
+    print(f"y sample: {y.head(3).values}")
     X = df.drop(columns=[TARGET, "Id"], errors="ignore").copy()
 
     # One-hot encode categoricals
@@ -32,5 +32,11 @@ def load_data(filepath: str = "data/train.csv"):
     # Fill missing values with median
     X = X.fillna(X.median(numeric_only=True))
 
+    # ── Reset index so X and y stay aligned after train_test_split ──
+    X = X.reset_index(drop=True)
+    y = y.reset_index(drop=True)
+
     print(f"[DataLoader] Loaded  →  {X.shape[0]} rows  |  {X.shape[1]} features")
+    print(f"[DataLoader] y range →  {y.min():.4f} – {y.max():.4f}  "
+          f"(${np.exp(y.min()):,.0f} – ${np.exp(y.max()):,.0f})")
     return X, y

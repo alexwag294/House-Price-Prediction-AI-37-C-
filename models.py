@@ -1,14 +1,4 @@
-"""
-models.py
-─────────
-Returns the Multiple Linear Regression model.
 
-Model equation:
-  Y = β₀ + β₁X₁ + β₂X₂ + ... + βₙXₙ + ε
-
-Beta coefficients solved via the Normal Equation:
-  β̂ = (XᵀX)⁻¹XᵀY
-"""
 
 from sklearn.linear_model import LinearRegression
 

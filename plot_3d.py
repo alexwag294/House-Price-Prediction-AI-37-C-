@@ -1,11 +1,3 @@
-"""
-plot_3d.py
-──────────
-3D visualisation using the top 2 of the 8 features:
-  X — OverallQual   Y — TotalSF   Z — Price ($K)
-
-Called by main.py automatically.
-"""
 
 import numpy as np
 import matplotlib.pyplot as plt
